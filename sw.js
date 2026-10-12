@@ -1,4 +1,4 @@
-// v3 - Force fresh network fetch for HTML and Cloud Sync APIs
+// v4 - Force fresh network fetch for HTML and Cloud Sync APIs
 self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
