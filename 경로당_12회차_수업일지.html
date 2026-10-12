@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="수업일지" />
+  <meta name="apple-mobile-web-app-title" content="강의일지" />
   <meta name="theme-color" content="#2563eb" />
   <link rel="manifest" href="manifest.json" />
-  <title>경로당별 12회차 수업일지</title>
+  <title>기관별 강의일지</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
@@ -54,7 +54,7 @@
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
       <div>
         <div class="flex flex-wrap items-center gap-2">
-          <h1 class="text-lg sm:text-xl font-bold text-[var(--foreground)]">경로당별 12회차 수업일지</h1>
+          <h1 class="text-lg sm:text-xl font-bold text-[var(--foreground)]">기관별 강의일지</h1>
           <span id="cloudBadge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
             ☁️ 스마트폰·PC 실시간 연동 중
           </span>
@@ -110,24 +110,24 @@
       </div>
     </div>
 
-    <!-- 경로당 선택 탭 + [+ 새 경로당 추가] 버튼 -->
+    <!-- 기관 선택 탭 + [+ 새 기관 추가] 버튼 -->
     <div id="centerTabs" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 no-print"></div>
 
-    <!-- 새 경로당 추가 / 수정 입력창 -->
+    <!-- 새 기관 추가 / 수정 입력창 -->
     <div id="centerModal" class="hidden bg-[var(--card)] border-2 border-[var(--primary)] rounded-xl p-4 shadow-md space-y-3 no-print">
       <div class="flex items-center justify-between">
-        <h3 id="modalTitle" class="text-sm font-bold text-[var(--foreground)]">새 경로당(수업 장소) 추가하기</h3>
+        <h3 id="modalTitle" class="text-sm font-bold text-[var(--foreground)]">새 기관(강의 장소) 추가하기</h3>
         <button id="btnCloseModal" type="button" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">✕ 닫기</button>
       </div>
       <form id="centerForm" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
         <input type="hidden" id="modalMode" value="add" />
         <div class="sm:col-span-4">
-          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">경로당(수업 장소) 이름 *</label>
-          <input id="newCenterName" type="text" required placeholder="예: 행복경로당"
+          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">기관(강의 장소) 이름 *</label>
+          <input id="newCenterName" type="text" required placeholder="예: 원미노인복지관 / 행복경로당"
             class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]" />
         </div>
         <div class="sm:col-span-4">
-          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">수업 요일/시간 메모</label>
+          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">강의 요일/시간 메모</label>
           <input id="newCenterSchedule" type="text" placeholder="예: 화요일 (오후)"
             class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]" />
         </div>
@@ -144,23 +144,23 @@
       </form>
     </div>
 
-    <!-- 선택된 경로당 12회차 수업일지 카드 -->
+    <!-- 선택된 기관 강의일지 카드 -->
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-sm space-y-4 print-card">
 
-      <!-- 경로당 제목 & 날짜 자동 채우기 도구 -->
+      <!-- 기관 제목 & 날짜 자동 채우기 도구 -->
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-[var(--border)] pb-4">
         <div>
           <div class="flex flex-wrap items-center gap-2">
-            <h2 id="sheetTitle" class="text-base sm:text-lg font-bold text-[var(--foreground)]">궁말경로당 수업일지</h2>
+            <h2 id="sheetTitle" class="text-base sm:text-lg font-bold text-[var(--foreground)]">궁말경로당 강의일지</h2>
             <span id="sheetProgress" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-[var(--accent)] text-[var(--primary)]">0 / 12회 완료</span>
             <button id="btnEditCenterInfo" type="button" class="px-2 py-0.5 text-xs rounded border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-80 no-print">
               이름/요일 수정
             </button>
             <button id="btnDeleteCenter" type="button" class="px-2 py-0.5 text-xs rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-red-600 no-print">
-              경로당 삭제
+              기관 삭제
             </button>
           </div>
-          <p id="sheetSubtitle" class="text-xs text-[var(--muted-foreground)] mt-1">수업 요일: 월요일 / 수요일(오전)</p>
+          <p id="sheetSubtitle" class="text-xs text-[var(--muted-foreground)] mt-1">강의 요일: 월요일 / 수요일(오전)</p>
         </div>
 
         <!-- 날짜 자동 채우기 도우미 -->
@@ -177,12 +177,12 @@
         </div>
       </div>
 
-      <!-- 12회차 수업일지 테이블 -->
+      <!-- 12회차 강의일지 테이블 -->
       <div class="overflow-x-auto border border-[var(--border)] rounded-lg">
         <table class="w-full text-left border-collapse text-sm mobile-card-table">
           <thead class="bg-[var(--secondary)] text-[var(--secondary-foreground)] border-b border-[var(--border)] text-xs">
             <tr>
-              <th class="py-2.5 px-3 font-semibold w-36 whitespace-nowrap">경로당 이름</th>
+              <th class="py-2.5 px-3 font-semibold w-36 whitespace-nowrap">기관 이름</th>
               <th class="py-2.5 px-3 font-semibold w-44 whitespace-nowrap">날짜</th>
               <th class="py-2.5 px-3 font-semibold w-16 text-center whitespace-nowrap">회차</th>
               <th class="py-2.5 px-3 font-semibold w-full min-w-[280px]">수업 내용</th>
@@ -203,10 +203,10 @@
             - 마지막 회차 삭제
           </button>
           <button id="btnExportCurrentCsv" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
-            현재 경로당 엑셀저장
+            현재 기관 엑셀저장
           </button>
           <button id="btnResetCenter" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            현재 경로당 비우기
+            현재 기관 비우기
           </button>
         </div>
         <span id="saveStatus" class="text-xs font-medium text-[var(--primary)]">모든 변경사항이 자동 저장됩니다.</span>
@@ -421,8 +421,8 @@
       addBtn.type = 'button';
       addBtn.className = 'p-2.5 sm:p-3 rounded-xl border-2 border-dashed border-[var(--primary)] bg-[var(--accent)]/40 text-[var(--primary)] hover:bg-[var(--accent)] text-center flex flex-col items-center justify-center shadow-sm transition min-h-[72px]';
       addBtn.innerHTML = `
-        <div class="text-sm sm:text-base font-bold">+ 새 경로당 추가</div>
-        <div class="text-xs mt-0.5">수업 장소 늘리기</div>
+        <div class="text-sm sm:text-base font-bold">+ 새 기관 추가</div>
+        <div class="text-xs mt-0.5">강의 장소 늘리기</div>
       `;
       addBtn.addEventListener('click', () => openCenterModal('add'));
       container.appendChild(addBtn);
@@ -446,7 +446,7 @@
         schedInp.value = c.scheduleDesc || '';
         sessWrap.classList.add('hidden');
       } else {
-        title.textContent = '새 경로당(수업 장소) 추가하기';
+        title.textContent = '새 기관(강의 장소) 추가하기';
         nameInp.value = '';
         schedInp.value = '';
         document.getElementById('newCenterSessions').value = 12;
@@ -487,7 +487,7 @@
         });
         store[newId] = createDefaultSessions(sessionCount);
         activeCenterId = newId;
-        saveStore(`새 경로당 [${name}] (${sessionCount}회차) 추가 완료!`);
+        saveStore(`새 기관 [${name}] (${sessionCount}회차) 추가 완료!`);
       }
 
       document.getElementById('centerModal').classList.add('hidden');
@@ -496,7 +496,7 @@
 
     document.getElementById('btnDeleteCenter').addEventListener('click', () => {
       if (centers.length <= 1) {
-        alert('최소 1개의 경로당은 남아있어야 합니다.');
+        alert('최소 1개의 기관은 남아있어야 합니다.');
         return;
       }
       const c = getActiveCenter();
@@ -514,8 +514,8 @@
       const rows = store[center.id];
       const filled = getFilledCount(center.id);
 
-      document.getElementById('sheetTitle').textContent = `${center.name} 수업일지`;
-      document.getElementById('sheetSubtitle').textContent = `수업 요일: ${center.scheduleDesc} | 총 ${rows.length}회차 과정`;
+      document.getElementById('sheetTitle').textContent = `${center.name} 강의일지`;
+      document.getElementById('sheetSubtitle').textContent = `강의 요일: ${center.scheduleDesc} | 총 ${rows.length}회차 과정`;
       document.getElementById('sheetProgress').textContent = `${filled} / ${rows.length}회 작성`;
 
       const tbody = document.getElementById('sessionTableBody');
@@ -706,18 +706,18 @@
 
     document.getElementById('btnExportCurrentCsv').addEventListener('click', () => {
       const center = getActiveCenter();
-      const header = ['경로당 이름', '날짜', '회차', '수업 내용'];
+      const header = ['기관 이름', '날짜', '회차', '수업 내용'];
       const data = store[center.id].map(r => [
         center.name,
         r.date ? `${r.date} ${getDayLabel(r.date)}` : '',
         `${r.session}회`,
         r.content || ''
       ]);
-      downloadCsv(`${center.name}_수업일지.csv`, [header, ...data]);
+      downloadCsv(`${center.name}_강의일지.csv`, [header, ...data]);
     });
 
     document.getElementById('btnExportAllCsv').addEventListener('click', () => {
-      const header = ['경로당 이름', '날짜', '회차', '수업 내용'];
+      const header = ['기관 이름', '날짜', '회차', '수업 내용'];
       const data = [];
       centers.forEach(c => {
         (store[c.id] || []).forEach(r => {
@@ -729,7 +729,7 @@
           ]);
         });
       });
-      downloadCsv(`전체경로당_수업일지.csv`, [header, ...data]);
+      downloadCsv(`전체기관_강의일지.csv`, [header, ...data]);
     });
 
     function renderAll() {
