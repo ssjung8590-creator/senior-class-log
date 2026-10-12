@@ -257,12 +257,17 @@
     }
 
     function normalizeCentersList(list) {
-      if (!Array.isArray(list)) return;
+      if (!Array.isArray(list)) return false;
+      let changed = false;
       list.forEach(c => {
-        if ((c.id === 'c3' || c.name === '더포레스트힐 심화반') && c.scheduleDesc === '수요일 (오후)') {
-          c.scheduleDesc = '수요일 (오전)';
+        if (c && (c.id === 'c3' || (c.name && c.name.includes('더포레스트힐') && c.name.includes('심화')))) {
+          if (!c.scheduleDesc || c.scheduleDesc.includes('오후')) {
+            c.scheduleDesc = '수요일 (오전)';
+            changed = true;
+          }
         }
       });
+      return changed;
     }
 
     function loadStore() {
@@ -275,7 +280,9 @@
       } catch (e) {
         centers = [...DEFAULT_CENTERS];
       }
-      normalizeCentersList(centers);
+      if (normalizeCentersList(centers)) {
+        localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
+      }
 
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -323,6 +330,7 @@
         while (localRevision > syncedRevision) {
           const targetRev = localRevision;
           setCloudStatus('☁️ 클라우드 동기화 저장 중...');
+          normalizeCentersList(centers);
           const payload = {
             centers: JSON.parse(JSON.stringify(centers)),
             store: JSON.parse(JSON.stringify(store)),
@@ -412,6 +420,7 @@
     }
 
     function saveStore(msg = '자동 저장됨') {
+      normalizeCentersList(centers);
       updatedAt = Date.now();
       lastInputTime = updatedAt;
       localRevision++;
@@ -428,7 +437,7 @@
       syncTimer = setTimeout(() => {
         syncTimer = null;
         pushToCloud();
-      }, 500);
+      }, 1500);
     }
 
     function getDayLabel(dateStr) {
