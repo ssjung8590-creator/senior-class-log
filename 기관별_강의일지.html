@@ -228,7 +228,7 @@
     const DEFAULT_CENTERS = [
       { id: 'c1', name: '궁말경로당', scheduleDesc: '월요일 / 수요일(오전)', defaultInterval: 'mon_wed' },
       { id: 'c2', name: '센텀 퍼스트', scheduleDesc: '화요일', defaultInterval: 'weekly' },
-      { id: 'c3', name: '더포레스트힐 심화반', scheduleDesc: '수요일 (오후)', defaultInterval: 'weekly' },
+      { id: 'c3', name: '더포레스트힐 심화반', scheduleDesc: '수요일 (오전)', defaultInterval: 'weekly' },
       { id: 'c4', name: '더포레스트힐', scheduleDesc: '목요일', defaultInterval: 'weekly' },
       { id: 'c5', name: '부천 원미 노인복지관', scheduleDesc: '금요일', defaultInterval: 'weekly' }
     ];
@@ -256,6 +256,15 @@
       return arr;
     }
 
+    function normalizeCentersList(list) {
+      if (!Array.isArray(list)) return;
+      list.forEach(c => {
+        if ((c.id === 'c3' || c.name === '더포레스트힐 심화반') && c.scheduleDesc === '수요일 (오후)') {
+          c.scheduleDesc = '수요일 (오전)';
+        }
+      });
+    }
+
     function loadStore() {
       try {
         const rawCenters = localStorage.getItem(CENTERS_KEY);
@@ -266,6 +275,7 @@
       } catch (e) {
         centers = [...DEFAULT_CENTERS];
       }
+      normalizeCentersList(centers);
 
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -382,6 +392,7 @@
         if (hasPendingLocalSave || localRevision > syncedRevision || isPushing) return;
         if (remote && Array.isArray(remote.centers) && remote.store) {
           centers = remote.centers;
+          normalizeCentersList(centers);
           store = remote.store;
           lastSyncedKey = key;
           localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
@@ -585,10 +596,14 @@
             </div>
           </td>
           <td class="py-2 px-3 whitespace-nowrap">
-            <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1">
               <input type="date" data-idx="${idx}" data-field="date" value="${row.date || ''}"
                 class="px-2 py-1.5 sm:py-1 text-xs rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
               <span class="text-xs text-[var(--muted-foreground)] w-6" data-day-idx="${idx}">${dayLabel}</span>
+              <button type="button" data-skip="${idx}" title="휴강 처리 (이 날짜를 지우고 다음 수업일부터 자동 채우기)"
+                class="no-print px-1.5 py-0.5 text-[11px] font-medium rounded border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:bg-[var(--accent)] hover:text-[var(--primary)]">
+                휴강
+              </button>
             </div>
           </td>
           <td class="hidden sm:table-cell py-2 px-3 text-center font-bold text-xs text-[var(--primary)] whitespace-nowrap">${row.session}회</td>
@@ -598,7 +613,7 @@
               class="w-full px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
           </td>
           <td class="py-2 px-2 text-right sm:text-center whitespace-nowrap no-print">
-            <button type="button" data-clear="${idx}" title="이 회차 비우기" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-1.5 py-1 rounded">✕</button>
+            <button type="button" data-clear="${idx}" title="이 회차 비우기 (날짜가 있으면 다음 수업일부터 자동 당김)" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-1.5 py-1 rounded">✕</button>
           </td>
         `;
         tbody.appendChild(tr);
@@ -608,10 +623,39 @@
         inp.addEventListener('input', (e) => {
           const i = Number(e.target.getAttribute('data-idx'));
           const field = e.target.getAttribute('data-field');
-          store[center.id][i][field] = e.target.value;
           if (field === 'date') {
+            const prevDate = store[center.id][i].date;
+            const newVal = e.target.value;
+            // 날짜를 지웠을 때: 휴강으로 간주하고 기존 날짜의 다음 수업일부터 이후 회차를 자동 채움
+            if (!newVal && prevDate) {
+              const mode = getCenterIntervalMode(center);
+              const nextDate = getNextClassDateStr(prevDate, mode);
+              if (nextDate) {
+                fillSubsequentDatesFrom(center, i, nextDate);
+                saveStore(`휴강 반영: ${prevDate} 제외 후 다음 수업일(${nextDate})부터 자동 채움 완료!`);
+                renderAll();
+                return;
+              }
+            }
+            store[center.id][i].date = newVal;
             const span = tbody.querySelector(`[data-day-idx="${i}"]`);
-            if (span) span.textContent = getDayLabel(e.target.value);
+            if (span) span.textContent = getDayLabel(newVal);
+
+            // 날짜를 새로 선택/변경했을 때: 그 다음 회차들도 이어서 자동 채움
+            if (newVal) {
+              const [y] = newVal.split('-').map(Number);
+              if (y >= 2020 && y <= 2100) {
+                fillSubsequentDatesFrom(center, i, newVal);
+                for (let k = i + 1; k < store[center.id].length; k++) {
+                  const nextInp = tbody.querySelector(`input[data-idx="${k}"][data-field="date"]`);
+                  const nextSpan = tbody.querySelector(`[data-day-idx="${k}"]`);
+                  if (nextInp) nextInp.value = store[center.id][k].date;
+                  if (nextSpan) nextSpan.textContent = getDayLabel(store[center.id][k].date);
+                }
+              }
+            }
+          } else {
+            store[center.id][i][field] = e.target.value;
           }
           saveStore();
           updateSummaryViewsOnly();
@@ -623,13 +667,40 @@
         });
       });
 
+      tbody.querySelectorAll('button[data-skip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = Number(btn.getAttribute('data-skip'));
+          const mode = getCenterIntervalMode(center);
+          let baseDate = store[center.id][i].date;
+          if (!baseDate && i > 0 && store[center.id][i - 1].date) {
+            baseDate = getNextClassDateStr(store[center.id][i - 1].date, mode);
+          }
+          if (!baseDate) {
+            alert('기준이 될 날짜가 없습니다. 먼저 1회차 시작일을 채워주세요!');
+            return;
+          }
+          const nextDate = getNextClassDateStr(baseDate, mode);
+          fillSubsequentDatesFrom(center, i, nextDate);
+          saveStore(`휴강 반영: ${baseDate} 수업일을 건너뛰고 ${nextDate}부터 자동 채웠습니다`);
+          renderAll();
+        });
+      });
+
       tbody.querySelectorAll('button[data-clear]').forEach(btn => {
         btn.addEventListener('click', () => {
           const i = Number(btn.getAttribute('data-clear'));
-          store[center.id][i].date = '';
+          const prevDate = store[center.id][i].date;
           store[center.id][i].content = '';
           store[center.id][i].note = '';
-          saveStore('해당 회차 비움');
+          if (prevDate) {
+            const mode = getCenterIntervalMode(center);
+            const nextDate = getNextClassDateStr(prevDate, mode);
+            fillSubsequentDatesFrom(center, i, nextDate);
+            saveStore(`휴강 반영: ${prevDate} 제외 후 ${nextDate}부터 날짜 자동 채움 완료`);
+          } else {
+            store[center.id][i].date = '';
+            saveStore('해당 회차 비움');
+          }
           renderAll();
         });
       });
@@ -654,6 +725,50 @@
       return `${y}-${m}-${d}`;
     }
 
+    function getCenterIntervalMode(center) {
+      if (center && center.defaultInterval) return center.defaultInterval;
+      if (center && center.scheduleDesc && center.scheduleDesc.includes('월') && center.scheduleDesc.includes('수')) {
+        return 'mon_wed';
+      }
+      const sel = document.getElementById('autoInterval');
+      return (sel && sel.value) ? sel.value : 'weekly';
+    }
+
+    function getNextClassDateStr(dateStr, mode) {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return '';
+      const dt = new Date(y, m - 1, d);
+      if (mode === 'weekly') {
+        dt.setDate(dt.getDate() + 7);
+      } else {
+        const day = dt.getDay();
+        if (day === 1) {
+          dt.setDate(dt.getDate() + 2);
+        } else if (day === 3) {
+          dt.setDate(dt.getDate() + 5);
+        } else {
+          dt.setDate(dt.getDate() + 3);
+        }
+      }
+      return formatDateObj(dt);
+    }
+
+    function fillSubsequentDatesFrom(center, startIdx, startDateStr) {
+      const rows = store[center.id];
+      if (!rows || !startDateStr) return;
+      const mode = getCenterIntervalMode(center);
+      let cur = startDateStr;
+      for (let k = startIdx; k < rows.length; k++) {
+        if (k === startIdx) {
+          rows[k].date = cur;
+        } else {
+          cur = getNextClassDateStr(cur, mode);
+          rows[k].date = cur;
+        }
+      }
+    }
+
     document.getElementById('btnAutoFillDates').addEventListener('click', () => {
       const startStr = document.getElementById('autoStartDate').value;
       if (!startStr) {
@@ -662,30 +777,8 @@
       }
       const mode = document.getElementById('autoInterval').value;
       const center = getActiveCenter();
-      const rows = store[center.id];
-
-      const [y, m, d] = startStr.split('-').map(Number);
-      let current = new Date(y, m - 1, d);
-
-      rows.forEach((row, idx) => {
-        if (idx === 0) {
-          row.date = formatDateObj(current);
-        } else {
-          if (mode === 'weekly') {
-            current.setDate(current.getDate() + 7);
-          } else {
-            const day = current.getDay();
-            if (day === 1) {
-              current.setDate(current.getDate() + 2);
-            } else if (day === 3) {
-              current.setDate(current.getDate() + 5);
-            } else {
-              current.setDate(current.getDate() + 3);
-            }
-          }
-          row.date = formatDateObj(current);
-        }
-      });
+      center.defaultInterval = mode;
+      fillSubsequentDatesFrom(center, 0, startStr);
 
       saveStore('날짜가 자동 입력되었습니다');
       renderAll();
