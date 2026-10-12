@@ -234,11 +234,17 @@
     ];
 
     const LAST_KEY_STORAGE = 'senior_center_last_cloud_key_v2';
+    const PENDING_PUSH_STORAGE = 'senior_center_pending_push_v2';
     let centers = [];
     let store = {};
     let updatedAt = 0;
     let lastSyncedKey = '';
     let hasPendingLocalSave = false;
+    let localRevision = 0;
+    let syncedRevision = 0;
+    let isPushing = false;
+    let isPulling = false;
+    let lastInputTime = 0;
     let activeCenterId = 'c1';
     let syncTimer = null;
 
@@ -270,6 +276,11 @@
 
       updatedAt = Number(localStorage.getItem(UPDATED_KEY) || 0);
       lastSyncedKey = localStorage.getItem(LAST_KEY_STORAGE) || '';
+      hasPendingLocalSave = localStorage.getItem(PENDING_PUSH_STORAGE) === '1';
+      if (hasPendingLocalSave) {
+        localRevision = 1;
+        syncedRevision = 0;
+      }
 
       centers.forEach(c => {
         if (!Array.isArray(store[c.id]) || store[c.id].length === 0) {
@@ -292,33 +303,60 @@
     }
 
     async function pushToCloud() {
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      if (isPushing) return;
+      isPushing = true;
       try {
-        setCloudStatus('☁️ 클라우드 동기화 저장 중...');
-        const payload = { centers, store, updatedAt };
-        const postRes = await fetch('https://bytebin.lucko.me/post', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!postRes.ok) throw new Error('bytebin error');
-        const { key } = await postRes.json();
-        if (key) {
-          await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}`, {
+        while (localRevision > syncedRevision) {
+          const targetRev = localRevision;
+          setCloudStatus('☁️ 클라우드 동기화 저장 중...');
+          const payload = {
+            centers: JSON.parse(JSON.stringify(centers)),
+            store: JSON.parse(JSON.stringify(store)),
+            updatedAt
+          };
+          const postRes = await fetch('https://bytebin.lucko.me/post', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
             cache: 'no-store'
           });
-          lastSyncedKey = key;
-          hasPendingLocalSave = false;
-          localStorage.setItem(LAST_KEY_STORAGE, key);
-          setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+          if (!postRes.ok) throw new Error('bytebin error');
+          const { key } = await postRes.json();
+          if (key) {
+            const kvRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}?t=${Date.now()}`, {
+              method: 'POST',
+              cache: 'no-store'
+            });
+            if (!kvRes.ok) throw new Error('keyvalue error');
+            lastSyncedKey = key;
+            syncedRevision = targetRev;
+            localStorage.setItem(LAST_KEY_STORAGE, key);
+          }
         }
+        hasPendingLocalSave = false;
+        localStorage.removeItem(PENDING_PUSH_STORAGE);
+        setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
       } catch (e) {
-        setCloudStatus('⚠️ 기기 내부에 저장됨 (오프라인)', false);
+        setCloudStatus('⚠️ 기기 내부에 저장됨 (동기화 재시도 중)', false);
+      } finally {
+        isPushing = false;
       }
     }
 
     async function pullFromCloud(forcePull = false) {
-      if (hasPendingLocalSave && !forcePull) return;
+      if (isPulling) return;
+      if (hasPendingLocalSave || localRevision > syncedRevision || syncTimer) {
+        await pushToCloud();
+        return;
+      }
+      if (isPushing) return;
+      if (!forcePull && Date.now() - lastInputTime < 2500) return;
+
+      isPulling = true;
       try {
         if (forcePull) setCloudStatus('🔄 최신 데이터 불러오는 중...');
         const ptrRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_APP_KEY}/${KV_POINTER_FIELD}?t=${Date.now()}`, {
@@ -328,16 +366,20 @@
         const rawKey = await ptrRes.text();
         const key = rawKey.replace(/"/g, '').trim();
         if (!key || key === 'null') {
-          if (updatedAt > 0) pushToCloud();
+          if (updatedAt > 0) {
+            localRevision++;
+            await pushToCloud();
+          }
           return;
         }
         if (key === lastSyncedKey && !forcePull) {
           setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
           return;
         }
-        const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, { cache: 'no-store' });
+        const blobRes = await fetch(`https://bytebin.lucko.me/${key}?t=${Date.now()}`, { cache: 'no-store' });
         if (!blobRes.ok) return;
         const remote = await blobRes.json();
+        if (hasPendingLocalSave || localRevision > syncedRevision || isPushing) return;
         if (remote && Array.isArray(remote.centers) && remote.store) {
           centers = remote.centers;
           store = remote.store;
@@ -353,15 +395,20 @@
         }
       } catch (e) {
         // Ignore network errors silently
+      } finally {
+        isPulling = false;
       }
     }
 
     function saveStore(msg = '자동 저장됨') {
       updatedAt = Date.now();
+      lastInputTime = updatedAt;
+      localRevision++;
       hasPendingLocalSave = true;
       localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
       localStorage.setItem(UPDATED_KEY, String(updatedAt));
+      localStorage.setItem(PENDING_PUSH_STORAGE, '1');
       const statusEl = document.getElementById('saveStatus');
       if (statusEl) {
         statusEl.textContent = `✓ ${msg}`;
@@ -370,7 +417,7 @@
       syncTimer = setTimeout(() => {
         syncTimer = null;
         pushToCloud();
-      }, 600);
+      }, 500);
     }
 
     function getDayLabel(dateStr) {
@@ -569,6 +616,11 @@
           saveStore();
           updateSummaryViewsOnly();
         });
+        inp.addEventListener('blur', () => {
+          if (hasPendingLocalSave || localRevision > syncedRevision || syncTimer) {
+            pushToCloud();
+          }
+        });
       });
 
       tbody.querySelectorAll('button[data-clear]').forEach(btn => {
@@ -740,7 +792,9 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=3').then(reg => {
+        reg.update().catch(() => {});
+      }).catch(() => {});
     }
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -778,15 +832,21 @@
     document.getElementById('autoInterval').value = getActiveCenter().defaultInterval || 'weekly';
     renderAll();
 
-    // 시작 시 클라우드 최신 데이터 불러오기 & 실시간(4초 주기) 자동 동기화
+    // 시작 시 클라우드 최신 데이터 불러오기 & 실시간(3초 주기) 자동 동기화
     pullFromCloud(true);
     window.addEventListener('focus', () => pullFromCloud(false));
-    setInterval(() => {
-      const activeTag = document.activeElement ? document.activeElement.tagName : '';
-      if (!hasPendingLocalSave && activeTag !== 'INPUT') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        if (hasPendingLocalSave || localRevision > syncedRevision || syncTimer) {
+          pushToCloud();
+        }
+      } else {
         pullFromCloud(false);
       }
-    }, 4000);
+    });
+    setInterval(() => {
+      pullFromCloud(false);
+    }, 3000);
   </script>
 </body>
 </html>
