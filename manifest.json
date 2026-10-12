@@ -1,7 +1,7 @@
 {
-  "name": "경로당 12회차 수업일지",
-  "short_name": "수업일지",
-  "description": "경로당별 12회차 수업일지 자동화 웹앱",
+  "name": "기관별 강의일지",
+  "short_name": "강의일지",
+  "description": "기관별 강의일지 자동화 웹앱",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
