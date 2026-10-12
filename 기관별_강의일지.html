@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="강의일지" />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="manifest" href="manifest.json" />
+  <title>기관별 강의일지</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --foreground: #0f172a;
+      --card: #ffffff;
+      --border: #cbd5e1;
+      --muted-foreground: #64748b;
+      --primary: #2563eb;
+      --primary-foreground: #ffffff;
+      --secondary: #f1f5f9;
+      --secondary-foreground: #1e293b;
+      --accent: #dbeafe;
+    }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif;
+    }
+    @media (max-width: 640px) {
+      .mobile-card-table thead { display: none; }
+      .mobile-card-table tbody tr {
+        display: block;
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .mobile-card-table tbody td {
+        display: block;
+        padding: 0.2rem 0;
+        width: 100% !important;
+      }
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #ffffff !important; padding: 0 !important; }
+      .print-card { border: none !important; box-shadow: none !important; padding: 0 !important; }
+      input { border: none !important; background: transparent !important; }
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-3 sm:p-4 md:p-6">
+  <div class="max-w-5xl mx-auto space-y-4 sm:space-y-5">
+
+    <!-- 상단 헤더 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 class="text-lg sm:text-xl font-bold text-[var(--foreground)]">기관별 강의일지</h1>
+          <span id="cloudBadge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
+            ☁️ 스마트폰·PC 실시간 연동 중
+          </span>
+        </div>
+        <p class="text-xs sm:text-sm text-[var(--muted-foreground)] mt-1">
+          스마트폰에서 적으면 집 PC에도 자동으로 똑같이 저장됩니다.
+        </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <button id="btnInstallApp" type="button" class="px-3 py-2 text-xs font-bold rounded-lg bg-amber-500 text-white hover:opacity-90">
+          📲 휴대폰 바탕화면 아이콘 만들기
+        </button>
+        <button id="btnShowMobileLink" type="button" class="px-3 py-2 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:opacity-90">
+          📱 스마트폰 주소 / QR보기
+        </button>
+        <button id="btnSyncNow" type="button" class="px-2.5 py-2 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
+          🔄 동기화 새로고침
+        </button>
+        <button id="btnPrint" type="button" onclick="window.print()" class="px-2.5 py-2 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
+          인쇄 / PDF
+        </button>
+        <button id="btnExportAllCsv" type="button" class="px-2.5 py-2 text-xs font-semibold rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90">
+          전체 엑셀(CSV)
+        </button>
+      </div>
+    </div>
+
+    <!-- 스마트폰 접속 안내 & QR코드 박스 (버튼 클릭 시 표시) -->
+    <div id="mobileLinkBox" class="hidden bg-[var(--card)] border-2 border-emerald-600 rounded-xl p-4 sm:p-5 shadow-md space-y-3 no-print">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm sm:text-base font-bold text-[var(--foreground)]">📱 스마트폰에서 바로 여는 방법</h3>
+        <button id="btnCloseMobileLink" type="button" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">✕ 닫기</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+        <div class="md:col-span-8 space-y-2.5 text-xs sm:text-sm">
+          <p class="font-medium text-[var(--foreground)]">
+            아래 <b>[인터넷 주소 복사하기]</b> 버튼을 눌러 카카오톡 <b>'나와의 채팅'</b>에 붙여넣고 휴대폰에서 누르거나, 우측 <b>QR코드</b>를 휴대폰 카메라로 비추면 바로 열립니다!
+          </p>
+          <div class="flex flex-wrap items-center gap-2 bg-[var(--secondary)] p-2.5 rounded-lg border border-[var(--border)]">
+            <span id="publicUrlText" class="font-mono font-bold text-[var(--primary)] text-xs sm:text-sm break-all">https://gyeongrodang-log-2026.surge.sh</span>
+            <button id="btnCopyUrl" type="button" class="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)]">
+              인터넷 주소 복사하기
+            </button>
+          </div>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            💡 휴대폰에서 열린 화면의 메뉴(⋮ 또는 공유 버튼)에서 <b>[홈 화면에 추가]</b>를 누르시면 진짜 앱처럼 휴대폰 바탕화면에 아이콘이 생깁니다.
+          </p>
+        </div>
+        <div class="md:col-span-4 flex flex-col items-center justify-center bg-white p-3 rounded-xl border border-[var(--border)]">
+          <img id="qrImage" src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://gyeongrodang-log-2026.surge.sh" alt="스마트폰 접속 QR코드" class="w-32 h-32" />
+          <span class="text-xs text-[var(--muted-foreground)] mt-1.5">휴대폰 카메라로 스캔하세요</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 기관 선택 탭 + [+ 새 기관 추가] 버튼 -->
+    <div id="centerTabs" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 no-print"></div>
+
+    <!-- 새 기관 추가 / 수정 입력창 -->
+    <div id="centerModal" class="hidden bg-[var(--card)] border-2 border-[var(--primary)] rounded-xl p-4 shadow-md space-y-3 no-print">
+      <div class="flex items-center justify-between">
+        <h3 id="modalTitle" class="text-sm font-bold text-[var(--foreground)]">새 기관(강의 장소) 추가하기</h3>
+        <button id="btnCloseModal" type="button" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">✕ 닫기</button>
+      </div>
+      <form id="centerForm" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+        <input type="hidden" id="modalMode" value="add" />
+        <div class="sm:col-span-4">
+          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">기관(강의 장소) 이름 *</label>
+          <input id="newCenterName" type="text" required placeholder="예: 원미노인복지관 / 행복경로당"
+            class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]" />
+        </div>
+        <div class="sm:col-span-4">
+          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">강의 요일/시간 메모</label>
+          <input id="newCenterSchedule" type="text" placeholder="예: 화요일 (오후)"
+            class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]" />
+        </div>
+        <div class="sm:col-span-2" id="sessionCountWrap">
+          <label class="block text-xs font-medium text-[var(--muted-foreground)] mb-1">기본 회차 수</label>
+          <input id="newCenterSessions" type="number" min="1" max="50" value="12"
+            class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]" />
+        </div>
+        <div class="sm:col-span-2 flex gap-1.5">
+          <button type="submit" id="btnSaveCenter" class="w-full py-2 px-3 text-xs font-semibold rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90">
+            저장하기
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 선택된 기관 강의일지 카드 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-sm space-y-4 print-card">
+
+      <!-- 기관 제목 & 날짜 자동 채우기 도구 -->
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-[var(--border)] pb-4">
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 id="sheetTitle" class="text-base sm:text-lg font-bold text-[var(--foreground)]">궁말경로당 강의일지</h2>
+            <span id="sheetProgress" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-[var(--accent)] text-[var(--primary)]">0 / 12회 완료</span>
+            <button id="btnEditCenterInfo" type="button" class="px-2 py-0.5 text-xs rounded border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-80 no-print">
+              이름/요일 수정
+            </button>
+            <button id="btnDeleteCenter" type="button" class="px-2 py-0.5 text-xs rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-red-600 no-print">
+              기관 삭제
+            </button>
+          </div>
+          <p id="sheetSubtitle" class="text-xs text-[var(--muted-foreground)] mt-1">강의 요일: 월요일 / 수요일(오전)</p>
+        </div>
+
+        <!-- 날짜 자동 채우기 도우미 -->
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-[var(--secondary)] p-2.5 rounded-lg no-print">
+          <span class="text-xs font-medium text-[var(--secondary-foreground)]">1회차 시작일:</span>
+          <input id="autoStartDate" type="date" class="px-2 py-1 text-xs rounded border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]" />
+          <select id="autoInterval" class="px-2 py-1 text-xs rounded border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]">
+            <option value="weekly">매주 1회 (+7일)</option>
+            <option value="mon_wed">매주 월·수 (주 2회)</option>
+          </select>
+          <button id="btnAutoFillDates" type="button" class="px-2.5 py-1 text-xs font-semibold rounded bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90">
+            날짜 자동채우기
+          </button>
+        </div>
+      </div>
+
+      <!-- 12회차 강의일지 테이블 -->
+      <div class="overflow-x-auto border border-[var(--border)] rounded-lg">
+        <table class="w-full text-left border-collapse text-sm mobile-card-table">
+          <thead class="bg-[var(--secondary)] text-[var(--secondary-foreground)] border-b border-[var(--border)] text-xs">
+            <tr>
+              <th class="py-2.5 px-3 font-semibold w-36 whitespace-nowrap">기관 이름</th>
+              <th class="py-2.5 px-3 font-semibold w-44 whitespace-nowrap">날짜</th>
+              <th class="py-2.5 px-3 font-semibold w-16 text-center whitespace-nowrap">회차</th>
+              <th class="py-2.5 px-3 font-semibold w-full min-w-[280px]">수업 내용</th>
+              <th class="py-2.5 px-2 font-semibold w-14 text-center whitespace-nowrap no-print">비우기</th>
+            </tr>
+          </thead>
+          <tbody id="sessionTableBody" class="divide-y divide-[var(--border)]"></tbody>
+        </table>
+      </div>
+
+      <!-- 회차 추가/축소 및 데이터 백업 버튼 -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-1 no-print">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button id="btnAddSession" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
+            + 회차 추가
+          </button>
+          <button id="btnRemoveLastSession" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
+            - 마지막 회차 삭제
+          </button>
+          <button id="btnExportCurrentCsv" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:opacity-90">
+            현재 기관 엑셀저장
+          </button>
+          <button id="btnResetCenter" type="button" class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+            현재 기관 비우기
+          </button>
+        </div>
+        <span id="saveStatus" class="text-xs font-medium text-[var(--primary)]">모든 변경사항이 자동 저장됩니다.</span>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'senior_center_12sessions_v2';
+    const CENTERS_KEY = 'senior_center_list_v2';
+    const UPDATED_KEY = 'senior_center_updated_at_v2';
+    const KV_APP_KEY = 'b9xu2nov';
+    const KV_POINTER_FIELD = 'senior_log_latest_key';
+    const PUBLIC_URL = 'https://gyeongrodang-log-2026.surge.sh';
+
+    const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+    const DEFAULT_CENTERS = [
+      { id: 'c1', name: '궁말경로당', scheduleDesc: '월요일 / 수요일(오전)', defaultInterval: 'mon_wed' },
+      { id: 'c2', name: '센텀 퍼스트', scheduleDesc: '화요일', defaultInterval: 'weekly' },
+      { id: 'c3', name: '더포레스트힐 심화반', scheduleDesc: '수요일 (오후)', defaultInterval: 'weekly' },
+      { id: 'c4', name: '더포레스트힐', scheduleDesc: '목요일', defaultInterval: 'weekly' },
+      { id: 'c5', name: '부천 원미 노인복지관', scheduleDesc: '금요일', defaultInterval: 'weekly' }
+    ];
+
+    const LAST_KEY_STORAGE = 'senior_center_last_cloud_key_v2';
+    let centers = [];
+    let store = {};
+    let updatedAt = 0;
+    let lastSyncedKey = '';
+    let hasPendingLocalSave = false;
+    let activeCenterId = 'c1';
+    let syncTimer = null;
+
+    function createDefaultSessions(count = 12) {
+      const arr = [];
+      for (let i = 1; i <= count; i++) {
+        arr.push({ session: i, date: '', content: '', note: '' });
+      }
+      return arr;
+    }
+
+    function loadStore() {
+      try {
+        const rawCenters = localStorage.getItem(CENTERS_KEY);
+        centers = rawCenters ? JSON.parse(rawCenters) : [...DEFAULT_CENTERS];
+        if (!Array.isArray(centers) || centers.length === 0) {
+          centers = [...DEFAULT_CENTERS];
+        }
+      } catch (e) {
+        centers = [...DEFAULT_CENTERS];
+      }
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        store = raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        store = {};
+      }
+
+      updatedAt = Number(localStorage.getItem(UPDATED_KEY) || 0);
+      lastSyncedKey = localStorage.getItem(LAST_KEY_STORAGE) || '';
+
+      centers.forEach(c => {
+        if (!Array.isArray(store[c.id]) || store[c.id].length === 0) {
+          store[c.id] = createDefaultSessions(12);
+        }
+      });
+
+      if (!centers.some(c => c.id === activeCenterId)) {
+        activeCenterId = centers[0].id;
+      }
+    }
+
+    function setCloudStatus(text, isOk = true) {
+      const badge = document.getElementById('cloudBadge');
+      if (!badge) return;
+      badge.textContent = text;
+      badge.className = isOk
+        ? 'px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800'
+        : 'px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800';
+    }
+
+    async function pushToCloud() {
+      try {
+        setCloudStatus('☁️ 클라우드 동기화 저장 중...');
+        const payload = { centers, store, updatedAt };
+        const postRes = await fetch('https://bytebin.lucko.me/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!postRes.ok) throw new Error('bytebin error');
+        const { key } = await postRes.json();
+        if (key) {
+          await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}`, {
+            method: 'POST',
+            cache: 'no-store'
+          });
+          lastSyncedKey = key;
+          hasPendingLocalSave = false;
+          localStorage.setItem(LAST_KEY_STORAGE, key);
+          setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+        }
+      } catch (e) {
+        setCloudStatus('⚠️ 기기 내부에 저장됨 (오프라인)', false);
+      }
+    }
+
+    async function pullFromCloud(forcePull = false) {
+      if (hasPendingLocalSave && !forcePull) return;
+      try {
+        if (forcePull) setCloudStatus('🔄 최신 데이터 불러오는 중...');
+        const ptrRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_APP_KEY}/${KV_POINTER_FIELD}?t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (!ptrRes.ok) return;
+        const rawKey = await ptrRes.text();
+        const key = rawKey.replace(/"/g, '').trim();
+        if (!key || key === 'null') {
+          if (updatedAt > 0) pushToCloud();
+          return;
+        }
+        if (key === lastSyncedKey && !forcePull) {
+          setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+          return;
+        }
+        const blobRes = await fetch(`https://bytebin.lucko.me/${key}`, { cache: 'no-store' });
+        if (!blobRes.ok) return;
+        const remote = await blobRes.json();
+        if (remote && Array.isArray(remote.centers) && remote.store) {
+          centers = remote.centers;
+          store = remote.store;
+          lastSyncedKey = key;
+          localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+          localStorage.setItem(LAST_KEY_STORAGE, key);
+          if (!centers.some(c => c.id === activeCenterId)) {
+            activeCenterId = centers[0].id;
+          }
+          renderAll();
+          setCloudStatus('☁️ 스마트폰·PC 최신 동기화 완료');
+        }
+      } catch (e) {
+        // Ignore network errors silently
+      }
+    }
+
+    function saveStore(msg = '자동 저장됨') {
+      updatedAt = Date.now();
+      hasPendingLocalSave = true;
+      localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      localStorage.setItem(UPDATED_KEY, String(updatedAt));
+      const statusEl = document.getElementById('saveStatus');
+      if (statusEl) {
+        statusEl.textContent = `✓ ${msg}`;
+      }
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        syncTimer = null;
+        pushToCloud();
+      }, 600);
+    }
+
+    function getDayLabel(dateStr) {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return '';
+      const dt = new Date(y, m - 1, d);
+      return `(${DAY_NAMES[dt.getDay()]})`;
+    }
+
+    function getActiveCenter() {
+      return centers.find(c => c.id === activeCenterId) || centers[0];
+    }
+
+    function getFilledCount(centerId) {
+      const rows = store[centerId] || [];
+      return rows.filter(r => (r.date && r.date.trim() !== '') || (r.content && r.content.trim() !== '')).length;
+    }
+
+    function renderTabs() {
+      const container = document.getElementById('centerTabs');
+      container.innerHTML = '';
+      centers.forEach(c => {
+        const rows = store[c.id] || [];
+        const filled = getFilledCount(c.id);
+        const isActive = c.id === activeCenterId;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = isActive
+          ? 'p-2.5 sm:p-3 rounded-xl border-2 border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)] text-left shadow-sm transition'
+          : 'p-2.5 sm:p-3 rounded-xl border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--primary)] text-left shadow-sm transition';
+
+        btn.innerHTML = `
+          <div class="text-xs opacity-80 truncate">${escapeAttr(c.scheduleDesc || '요일 미지정')}</div>
+          <div class="text-sm font-bold truncate mt-0.5">${escapeAttr(c.name)}</div>
+          <div class="text-xs font-semibold mt-1">${filled} / ${rows.length}회 기록됨</div>
+        `;
+        btn.addEventListener('click', () => {
+          activeCenterId = c.id;
+          document.getElementById('autoInterval').value = c.defaultInterval || 'weekly';
+          renderAll();
+        });
+        container.appendChild(btn);
+      });
+
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'p-2.5 sm:p-3 rounded-xl border-2 border-dashed border-[var(--primary)] bg-[var(--accent)]/40 text-[var(--primary)] hover:bg-[var(--accent)] text-center flex flex-col items-center justify-center shadow-sm transition min-h-[72px]';
+      addBtn.innerHTML = `
+        <div class="text-sm sm:text-base font-bold">+ 새 기관 추가</div>
+        <div class="text-xs mt-0.5">강의 장소 늘리기</div>
+      `;
+      addBtn.addEventListener('click', () => openCenterModal('add'));
+      container.appendChild(addBtn);
+    }
+
+    function openCenterModal(mode) {
+      const modal = document.getElementById('centerModal');
+      const modeInput = document.getElementById('modalMode');
+      const title = document.getElementById('modalTitle');
+      const nameInp = document.getElementById('newCenterName');
+      const schedInp = document.getElementById('newCenterSchedule');
+      const sessWrap = document.getElementById('sessionCountWrap');
+
+      modeInput.value = mode;
+      modal.classList.remove('hidden');
+
+      if (mode === 'edit') {
+        const c = getActiveCenter();
+        title.textContent = `[${c.name}] 이름 및 요일 수정`;
+        nameInp.value = c.name;
+        schedInp.value = c.scheduleDesc || '';
+        sessWrap.classList.add('hidden');
+      } else {
+        title.textContent = '새 기관(강의 장소) 추가하기';
+        nameInp.value = '';
+        schedInp.value = '';
+        document.getElementById('newCenterSessions').value = 12;
+        sessWrap.classList.remove('hidden');
+      }
+      nameInp.focus();
+    }
+
+    document.getElementById('btnCloseModal').addEventListener('click', () => {
+      document.getElementById('centerModal').classList.add('hidden');
+    });
+
+    document.getElementById('btnEditCenterInfo').addEventListener('click', () => {
+      openCenterModal('edit');
+    });
+
+    document.getElementById('centerForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const mode = document.getElementById('modalMode').value;
+      const name = document.getElementById('newCenterName').value.trim();
+      const scheduleDesc = document.getElementById('newCenterSchedule').value.trim() || '요일 미지정';
+      const sessionCount = Math.max(1, Number(document.getElementById('newCenterSessions').value) || 12);
+
+      if (!name) return;
+
+      if (mode === 'edit') {
+        const c = getActiveCenter();
+        c.name = name;
+        c.scheduleDesc = scheduleDesc;
+        saveStore(`[${name}] 정보가 수정되었습니다`);
+      } else {
+        const newId = 'c_' + Date.now();
+        centers.push({
+          id: newId,
+          name,
+          scheduleDesc,
+          defaultInterval: 'weekly'
+        });
+        store[newId] = createDefaultSessions(sessionCount);
+        activeCenterId = newId;
+        saveStore(`새 기관 [${name}] (${sessionCount}회차) 추가 완료!`);
+      }
+
+      document.getElementById('centerModal').classList.add('hidden');
+      renderAll();
+    });
+
+    document.getElementById('btnDeleteCenter').addEventListener('click', () => {
+      if (centers.length <= 1) {
+        alert('최소 1개의 기관은 남아있어야 합니다.');
+        return;
+      }
+      const c = getActiveCenter();
+      if (confirm(`정말 [${c.name}] 탭과 입력된 일지를 삭제하시겠습니까?`)) {
+        centers = centers.filter(item => item.id !== c.id);
+        delete store[c.id];
+        activeCenterId = centers[0].id;
+        saveStore(`[${c.name}] 삭제 완료`);
+        renderAll();
+      }
+    });
+
+    function renderSheet() {
+      const center = getActiveCenter();
+      const rows = store[center.id];
+      const filled = getFilledCount(center.id);
+
+      document.getElementById('sheetTitle').textContent = `${center.name} 강의일지`;
+      document.getElementById('sheetSubtitle').textContent = `강의 요일: ${center.scheduleDesc} | 총 ${rows.length}회차 과정`;
+      document.getElementById('sheetProgress').textContent = `${filled} / ${rows.length}회 작성`;
+
+      const tbody = document.getElementById('sessionTableBody');
+      tbody.innerHTML = '';
+
+      rows.forEach((row, idx) => {
+        if (row.note && row.note.trim()) {
+          row.content = row.content ? `${row.content} · ${row.note.trim()}` : row.note.trim();
+          row.note = '';
+        }
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-[var(--secondary)]/40 transition';
+        const dayLabel = getDayLabel(row.date);
+
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-semibold text-xs text-[var(--foreground)] whitespace-nowrap">
+            <div class="flex items-center justify-between sm:block">
+              <span>${escapeAttr(center.name)}</span>
+              <span class="sm:hidden font-bold text-[var(--primary)]">${row.session}회차</span>
+            </div>
+          </td>
+          <td class="py-2 px-3 whitespace-nowrap">
+            <div class="flex items-center gap-1.5">
+              <input type="date" data-idx="${idx}" data-field="date" value="${row.date || ''}"
+                class="px-2 py-1.5 sm:py-1 text-xs rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+              <span class="text-xs text-[var(--muted-foreground)] w-6" data-day-idx="${idx}">${dayLabel}</span>
+            </div>
+          </td>
+          <td class="hidden sm:table-cell py-2 px-3 text-center font-bold text-xs text-[var(--primary)] whitespace-nowrap">${row.session}회</td>
+          <td class="py-2 px-3 w-full min-w-[280px]">
+            <input type="text" data-idx="${idx}" data-field="content" value="${escapeAttr(row.content || '')}"
+              placeholder="${row.session}회차 수업 내용 입력..."
+              class="w-full px-3 py-2 sm:py-1.5 text-xs sm:text-sm rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+          </td>
+          <td class="py-2 px-2 text-right sm:text-center whitespace-nowrap no-print">
+            <button type="button" data-clear="${idx}" title="이 회차 비우기" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-1.5 py-1 rounded">✕</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('input[data-idx]').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const i = Number(e.target.getAttribute('data-idx'));
+          const field = e.target.getAttribute('data-field');
+          store[center.id][i][field] = e.target.value;
+          if (field === 'date') {
+            const span = tbody.querySelector(`[data-day-idx="${i}"]`);
+            if (span) span.textContent = getDayLabel(e.target.value);
+          }
+          saveStore();
+          updateSummaryViewsOnly();
+        });
+      });
+
+      tbody.querySelectorAll('button[data-clear]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = Number(btn.getAttribute('data-clear'));
+          store[center.id][i].date = '';
+          store[center.id][i].content = '';
+          store[center.id][i].note = '';
+          saveStore('해당 회차 비움');
+          renderAll();
+        });
+      });
+    }
+
+    function updateSummaryViewsOnly() {
+      const center = getActiveCenter();
+      const rows = store[center.id];
+      const filled = getFilledCount(center.id);
+      document.getElementById('sheetProgress').textContent = `${filled} / ${rows.length}회 작성`;
+      renderTabs();
+    }
+
+    function escapeAttr(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function formatDateObj(dt) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    document.getElementById('btnAutoFillDates').addEventListener('click', () => {
+      const startStr = document.getElementById('autoStartDate').value;
+      if (!startStr) {
+        alert('먼저 1회차 시작일을 선택해 주세요!');
+        return;
+      }
+      const mode = document.getElementById('autoInterval').value;
+      const center = getActiveCenter();
+      const rows = store[center.id];
+
+      const [y, m, d] = startStr.split('-').map(Number);
+      let current = new Date(y, m - 1, d);
+
+      rows.forEach((row, idx) => {
+        if (idx === 0) {
+          row.date = formatDateObj(current);
+        } else {
+          if (mode === 'weekly') {
+            current.setDate(current.getDate() + 7);
+          } else {
+            const day = current.getDay();
+            if (day === 1) {
+              current.setDate(current.getDate() + 2);
+            } else if (day === 3) {
+              current.setDate(current.getDate() + 5);
+            } else {
+              current.setDate(current.getDate() + 3);
+            }
+          }
+          row.date = formatDateObj(current);
+        }
+      });
+
+      saveStore('날짜가 자동 입력되었습니다');
+      renderAll();
+    });
+
+    document.getElementById('btnAddSession').addEventListener('click', () => {
+      const center = getActiveCenter();
+      const rows = store[center.id];
+      const nextNum = rows.length + 1;
+      rows.push({ session: nextNum, date: '', content: '', note: '' });
+      saveStore(`${nextNum}회차 행이 추가되었습니다`);
+      renderAll();
+    });
+
+    document.getElementById('btnRemoveLastSession').addEventListener('click', () => {
+      const center = getActiveCenter();
+      const rows = store[center.id];
+      if (rows.length <= 1) return;
+      rows.pop();
+      saveStore(`마지막 회차 행이 삭제되었습니다 (총 ${rows.length}회차)`);
+      renderAll();
+    });
+
+    document.getElementById('btnResetCenter').addEventListener('click', () => {
+      const center = getActiveCenter();
+      if (confirm(`[${center.name}]의 입력 내용을 모두 비우시겠습니까?`)) {
+        store[center.id] = createDefaultSessions(12);
+        saveStore(`${center.name} 초기화 완료`);
+        renderAll();
+      }
+    });
+
+    document.getElementById('btnShowMobileLink').addEventListener('click', () => {
+      document.getElementById('mobileLinkBox').classList.toggle('hidden');
+    });
+    document.getElementById('btnCloseMobileLink').addEventListener('click', () => {
+      document.getElementById('mobileLinkBox').classList.add('hidden');
+    });
+    document.getElementById('btnCopyUrl').addEventListener('click', () => {
+      copyToClipboard(PUBLIC_URL, '인터넷 주소');
+      alert('인터넷 주소가 복사되었습니다! 카카오톡 나와의 채팅에 붙여넣기(Ctrl+V) 해보세요.');
+    });
+    document.getElementById('btnSyncNow').addEventListener('click', () => {
+      pullFromCloud(true);
+    });
+
+    function copyToClipboard(text, label) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      const statusEl = document.getElementById('saveStatus');
+      if (statusEl) statusEl.textContent = `✓ ${label} 복사 완료!`;
+    }
+
+    function downloadCsv(filename, rowsArray) {
+      const csvContent = '\uFEFF' + rowsArray
+        .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('btnExportCurrentCsv').addEventListener('click', () => {
+      const center = getActiveCenter();
+      const header = ['기관 이름', '날짜', '회차', '수업 내용'];
+      const data = store[center.id].map(r => [
+        center.name,
+        r.date ? `${r.date} ${getDayLabel(r.date)}` : '',
+        `${r.session}회`,
+        r.content || ''
+      ]);
+      downloadCsv(`${center.name}_강의일지.csv`, [header, ...data]);
+    });
+
+    document.getElementById('btnExportAllCsv').addEventListener('click', () => {
+      const header = ['기관 이름', '날짜', '회차', '수업 내용'];
+      const data = [];
+      centers.forEach(c => {
+        (store[c.id] || []).forEach(r => {
+          data.push([
+            c.name,
+            r.date ? `${r.date} ${getDayLabel(r.date)}` : '',
+            `${r.session}회`,
+            r.content || ''
+          ]);
+        });
+      });
+      downloadCsv(`전체기관_강의일지.csv`, [header, ...data]);
+    });
+
+    function renderAll() {
+      renderTabs();
+      renderSheet();
+    }
+
+    // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
+    let deferredInstallPrompt = null;
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+    });
+
+    document.getElementById('btnInstallApp').addEventListener('click', async () => {
+      const ua = navigator.userAgent || '';
+      const isKakao = /KAKAOTALK/i.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      const isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+      if (isKakao && isAndroid) {
+        alert('카카오톡 창에서는 바탕화면 아이콘을 바로 만들 수 없어 크롬(인터넷) 창으로 자동 전환합니다.\n\n열리는 창에서 다시 노란색 [📲 휴대폰 바탕화면 아이콘 만들기] 또는 우측 상단 [⋮] → [홈 화면에 추가]를 눌러주세요!');
+        location.href = 'intent://gyeongrodang-log-2026.surge.sh#Intent;scheme=https;package=com.android.chrome;end';
+        return;
+      }
+
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        return;
+      }
+
+      if (isIOS) {
+        alert('📱 아이폰 바탕화면에 아이콘 만드는 방법:\n\n1. 카카오톡이라면 우측 하단 [⋯] → [Safari로 열기]를 누르세요.\n2. 사파리 하단 가운데 [공유(네모 위 화살표)] 버튼을 누르세요.\n3. 메뉴에서 [홈 화면에 추가]를 누르면 바탕화면에 아이콘이 생깁니다!');
+      } else {
+        alert('📱 갤럭시(휴대폰) 바탕화면에 아이콘 만드는 방법:\n\n1. 카카오톡 안에서 열렸다면 우측 상단(또는 하단) [⋮] → [다른 브라우저로 열기]를 누르세요.\n2. 인터넷 창 우측 상단 [⋮] 메뉴(또는 하단 ≡ 메뉴)를 누르세요.\n3. [홈 화면에 추가] (또는 [현재 페이지 추가] → [홈 화면])를 누르면 휴대폰 바탕화면에 앱 아이콘이 생깁니다!');
+      }
+    });
+
+    loadStore();
+    document.getElementById('autoStartDate').value = formatDateObj(new Date());
+    document.getElementById('autoInterval').value = getActiveCenter().defaultInterval || 'weekly';
+    renderAll();
+
+    // 시작 시 클라우드 최신 데이터 불러오기 & 실시간(4초 주기) 자동 동기화
+    pullFromCloud(true);
+    window.addEventListener('focus', () => pullFromCloud(false));
+    setInterval(() => {
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      if (!hasPendingLocalSave && activeTag !== 'INPUT') {
+        pullFromCloud(false);
+      }
+    }, 4000);
+  </script>
+</body>
+</html>
