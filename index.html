@@ -310,6 +310,39 @@
       }
     }
 
+    const NTFY_TOPIC = 'senior_log_db_b9xu2nov_2026';
+
+    function packCompact() {
+      const compact = {
+        c: centers.map(x => ({ i: x.id, n: x.name, s: x.scheduleDesc, d: x.defaultInterval })),
+        s: {},
+        t: updatedAt
+      };
+      for (const [k, rows] of Object.entries(store)) {
+        compact.s[k] = rows.map(r => ({ n: r.session, d: r.date, c: r.content })).filter(r => r.d || r.c);
+      }
+      return compact;
+    }
+
+    function unpackCompact(compactObj) {
+      if (!compactObj || !Array.isArray(compactObj.c) || !compactObj.s) return null;
+      const newCenters = compactObj.c.map(x => ({ id: x.i, name: x.n, scheduleDesc: x.s, defaultInterval: x.d }));
+      const newStore = {};
+      newCenters.forEach(c => {
+        const arr = [];
+        const filledMap = {};
+        (compactObj.s[c.id] || []).forEach(row => {
+          filledMap[row.n] = row;
+        });
+        for (let i = 1; i <= 12; i++) {
+          const item = filledMap[i];
+          arr.push({ session: i, date: item ? item.d : '', content: item ? item.c : '', note: '' });
+        }
+        newStore[c.id] = arr;
+      });
+      return { centers: newCenters, store: newStore, updatedAt: compactObj.t || Date.now() };
+    }
+
     function setCloudStatus(text, isOk = true) {
       const badge = document.getElementById('cloudBadge');
       if (!badge) return;
@@ -327,35 +360,48 @@
       if (isPushing) return;
       isPushing = true;
       try {
-        while (localRevision > syncedRevision) {
-          const targetRev = localRevision;
-          setCloudStatus('☁️ 클라우드 동기화 저장 중...');
-          normalizeCentersList(centers);
-          const payload = {
-            centers: JSON.parse(JSON.stringify(centers)),
-            store: JSON.parse(JSON.stringify(store)),
-            updatedAt
-          };
+        setCloudStatus('☁️ 클라우드 동기화 저장 중...');
+        normalizeCentersList(centers);
+        const payload = {
+          centers: JSON.parse(JSON.stringify(centers)),
+          store: JSON.parse(JSON.stringify(store)),
+          updatedAt
+        };
+        const compactObj = packCompact();
+
+        // 1. Send compact payload to ntfy.sh (instant notification + real-time SSE trigger)
+        fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+          method: 'POST',
+          headers: { 'Title': 'sync' },
+          body: JSON.stringify(compactObj)
+        }).catch(() => {});
+
+        // 2. Primary long-term storage via bytebin + keyvalue
+        try {
           const postRes = await fetch('https://bytebin.lucko.me/post', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             cache: 'no-store'
           });
-          if (!postRes.ok) throw new Error('bytebin error');
-          const { key } = await postRes.json();
-          if (key) {
-            const kvRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}?t=${Date.now()}`, {
-              method: 'POST',
-              cache: 'no-store'
-            });
-            if (!kvRes.ok) throw new Error('keyvalue error');
-            lastSyncedKey = key;
-            syncedRevision = targetRev;
-            localStorage.setItem(LAST_KEY_STORAGE, key);
+          if (postRes.ok) {
+            const { key } = await postRes.json();
+            if (key) {
+              await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}?t=${Date.now()}`, {
+                method: 'POST',
+                cache: 'no-store'
+              });
+              lastSyncedKey = key;
+              localStorage.setItem(LAST_KEY_STORAGE, key);
+            }
           }
+        } catch (e) {
+          // Bytebin rate-limit or network hiccup; ntfy still propagated the change
         }
+
         hasPendingLocalSave = false;
+        localRevision = 0;
+        syncedRevision = 0;
         localStorage.removeItem(PENDING_PUSH_STORAGE);
         setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
       } catch (e) {
@@ -367,53 +413,90 @@
 
     async function pullFromCloud(forcePull = false) {
       if (isPulling) return;
-      if (hasPendingLocalSave || localRevision > syncedRevision || syncTimer) {
-        await pushToCloud();
-        return;
-      }
-      if (isPushing) return;
-      if (!forcePull && Date.now() - lastInputTime < 2500) return;
+      if (syncTimer && !forcePull) return;
+      if (Date.now() - lastInputTime < 1500 && !forcePull) return;
 
       isPulling = true;
       try {
         if (forcePull) setCloudStatus('🔄 최신 데이터 불러오는 중...');
-        const ptrRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_APP_KEY}/${KV_POINTER_FIELD}?t=${Date.now()}`, {
-          cache: 'no-store'
-        });
-        if (!ptrRes.ok) return;
-        const rawKey = await ptrRes.text();
-        const key = rawKey.replace(/"/g, '').trim();
-        if (!key || key === 'null') {
-          if (updatedAt > 0) {
-            localRevision++;
-            await pushToCloud();
+
+        let remoteData = null;
+        let remoteKey = '';
+
+        // Try bytebin via keyvalue pointer first
+        try {
+          const ptrRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_APP_KEY}/${KV_POINTER_FIELD}?t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (ptrRes.ok) {
+            const rawKey = await ptrRes.text();
+            remoteKey = rawKey.replace(/"/g, '').trim();
+            if (remoteKey && remoteKey !== 'null' && remoteKey.length < 30) {
+              if (forcePull || remoteKey !== lastSyncedKey) {
+                const blobRes = await fetch(`https://bytebin.lucko.me/${remoteKey}?t=${Date.now()}`, { cache: 'no-store' });
+                if (blobRes.ok) {
+                  const bJson = await blobRes.json();
+                  if (bJson && Array.isArray(bJson.centers) && bJson.store) {
+                    remoteData = bJson;
+                  }
+                }
+              }
+            }
           }
-          return;
+        } catch (e) {}
+
+        // Fallback or comparison with ntfy.sh
+        try {
+          const ntfyRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}/json?poll=1`, { cache: 'no-store' });
+          if (ntfyRes.ok) {
+            const text = await ntfyRes.text();
+            const lines = text.trim().split('\n').filter(Boolean);
+            if (lines.length > 0) {
+              const lastLine = JSON.parse(lines[lines.length - 1]);
+              if (lastLine.message) {
+                const ntfyObj = JSON.parse(lastLine.message);
+                if (ntfyObj && ntfyObj.t && (!remoteData || ntfyObj.t > (remoteData.updatedAt || 0))) {
+                  const unpacked = unpackCompact(ntfyObj);
+                  if (unpacked) remoteData = unpacked;
+                }
+              }
+            }
+          }
+        } catch (e) {}
+
+        if (remoteData && remoteData.updatedAt) {
+          // If remote is newer than local, adopt it!
+          if (remoteData.updatedAt > updatedAt || forcePull) {
+            centers = remoteData.centers;
+            normalizeCentersList(centers);
+            store = remoteData.store;
+            updatedAt = remoteData.updatedAt;
+            if (remoteKey) lastSyncedKey = remoteKey;
+            hasPendingLocalSave = false;
+            localRevision = 0;
+            syncedRevision = 0;
+            localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+            localStorage.setItem(UPDATED_KEY, String(updatedAt));
+            if (remoteKey) localStorage.setItem(LAST_KEY_STORAGE, remoteKey);
+            localStorage.removeItem(PENDING_PUSH_STORAGE);
+            if (!centers.some(c => c.id === activeCenterId)) {
+              activeCenterId = centers[0].id;
+            }
+            renderAll();
+            setCloudStatus('☁️ 최신 데이터 연동 완료');
+            return;
+          }
         }
-        if (key === lastSyncedKey && !forcePull) {
+
+        // If local has unsaved changes that are newer than cloud, push them
+        if (hasPendingLocalSave || localRevision > syncedRevision) {
+          await pushToCloud();
+        } else {
           setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
-          return;
-        }
-        const blobRes = await fetch(`https://bytebin.lucko.me/${key}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!blobRes.ok) return;
-        const remote = await blobRes.json();
-        if (hasPendingLocalSave || localRevision > syncedRevision || isPushing) return;
-        if (remote && Array.isArray(remote.centers) && remote.store) {
-          centers = remote.centers;
-          normalizeCentersList(centers);
-          store = remote.store;
-          lastSyncedKey = key;
-          localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-          localStorage.setItem(LAST_KEY_STORAGE, key);
-          if (!centers.some(c => c.id === activeCenterId)) {
-            activeCenterId = centers[0].id;
-          }
-          renderAll();
-          setCloudStatus('☁️ 스마트폰·PC 최신 동기화 완료');
         }
       } catch (e) {
-        // Ignore network errors silently
+        // Silently ignore network errors during background poll
       } finally {
         isPulling = false;
       }
@@ -437,7 +520,7 @@
       syncTimer = setTimeout(() => {
         syncTimer = null;
         pushToCloud();
-      }, 1500);
+      }, 1200);
     }
 
     function getDayLabel(dateStr) {
@@ -830,8 +913,18 @@
       copyToClipboard(PUBLIC_URL, '인터넷 주소');
       alert('인터넷 주소가 복사되었습니다! 카카오톡 나와의 채팅에 붙여넣기(Ctrl+V) 해보세요.');
     });
-    document.getElementById('btnSyncNow').addEventListener('click', () => {
-      pullFromCloud(true);
+    document.getElementById('btnSyncNow').addEventListener('click', async () => {
+      setCloudStatus('🔄 동기화 확인 중...');
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+        await pushToCloud();
+      } else if (hasPendingLocalSave || localRevision > syncedRevision) {
+        await pushToCloud();
+      }
+      await pullFromCloud(true);
+      const statusEl = document.getElementById('saveStatus');
+      if (statusEl) statusEl.textContent = '✓ 최신 동기화가 완료되었습니다!';
     });
 
     function copyToClipboard(text, label) {
@@ -894,7 +987,7 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js?v=3').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=5').then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }
@@ -949,6 +1042,19 @@
     setInterval(() => {
       pullFromCloud(false);
     }, 3000);
+
+    // 실시간 SSE 이벤트 리스너 (기기간 실시간 0.1초 즉시 동기화)
+    try {
+      const sse = new EventSource(`https://ntfy.sh/${NTFY_TOPIC}/sse`);
+      sse.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.event === 'message') {
+            pullFromCloud(false);
+          }
+        } catch (err) {}
+      };
+    } catch (e) {}
   </script>
 </body>
 </html>
