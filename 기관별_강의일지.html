@@ -235,6 +235,7 @@
 
     const LAST_KEY_STORAGE = 'senior_center_last_cloud_key_v2';
     const PENDING_PUSH_STORAGE = 'senior_center_pending_push_v2';
+    const ACTIVE_TAB_KEY = 'senior_center_active_tab_v2';
     let centers = [];
     let store = {};
     let updatedAt = 0;
@@ -245,7 +246,7 @@
     let isPushing = false;
     let isPulling = false;
     let lastInputTime = 0;
-    let activeCenterId = 'c1';
+    let activeCenterId = localStorage.getItem(ACTIVE_TAB_KEY) || 'c1';
     let syncTimer = null;
 
     function createDefaultSessions(count = 12) {
@@ -305,8 +306,12 @@
         }
       });
 
-      if (!centers.some(c => c.id === activeCenterId)) {
-        activeCenterId = centers[0].id;
+      const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
+      if (savedTab && centers.some(c => c.id === savedTab)) {
+        activeCenterId = savedTab;
+      } else if (!centers.some(c => c.id === activeCenterId)) {
+        activeCenterId = centers[0] ? centers[0].id : 'c1';
+        localStorage.setItem(ACTIVE_TAB_KEY, activeCenterId);
       }
     }
 
@@ -480,8 +485,12 @@
             localStorage.setItem(UPDATED_KEY, String(updatedAt));
             if (remoteKey) localStorage.setItem(LAST_KEY_STORAGE, remoteKey);
             localStorage.removeItem(PENDING_PUSH_STORAGE);
-            if (!centers.some(c => c.id === activeCenterId)) {
-              activeCenterId = centers[0].id;
+            const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
+            if (savedTab && centers.some(c => c.id === savedTab)) {
+              activeCenterId = savedTab;
+            } else if (!centers.some(c => c.id === activeCenterId)) {
+              activeCenterId = centers[0] ? centers[0].id : 'c1';
+              localStorage.setItem(ACTIVE_TAB_KEY, activeCenterId);
             }
             renderAll();
             setCloudStatus('☁️ 최신 데이터 연동 완료');
@@ -561,6 +570,7 @@
         `;
         btn.addEventListener('click', () => {
           activeCenterId = c.id;
+          localStorage.setItem(ACTIVE_TAB_KEY, c.id);
           document.getElementById('autoInterval').value = c.defaultInterval || 'weekly';
           renderAll();
         });
@@ -637,6 +647,7 @@
         });
         store[newId] = createDefaultSessions(sessionCount);
         activeCenterId = newId;
+        localStorage.setItem(ACTIVE_TAB_KEY, newId);
         saveStore(`새 기관 [${name}] (${sessionCount}회차) 추가 완료!`);
       }
 
@@ -653,7 +664,8 @@
       if (confirm(`정말 [${c.name}] 탭과 입력된 일지를 삭제하시겠습니까?`)) {
         centers = centers.filter(item => item.id !== c.id);
         delete store[c.id];
-        activeCenterId = centers[0].id;
+        activeCenterId = centers[0] ? centers[0].id : 'c1';
+        localStorage.setItem(ACTIVE_TAB_KEY, activeCenterId);
         saveStore(`[${c.name}] 삭제 완료`);
         renderAll();
       }
@@ -667,6 +679,10 @@
       document.getElementById('sheetTitle').textContent = `${center.name} 강의일지`;
       document.getElementById('sheetSubtitle').textContent = `강의 요일: ${center.scheduleDesc} | 총 ${rows.length}회차 과정`;
       document.getElementById('sheetProgress').textContent = `${filled} / ${rows.length}회 작성`;
+      const autoIntervalEl = document.getElementById('autoInterval');
+      if (autoIntervalEl) {
+        autoIntervalEl.value = center.defaultInterval || 'weekly';
+      }
 
       const tbody = document.getElementById('sessionTableBody');
       tbody.innerHTML = '';
@@ -987,7 +1003,7 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js?v=5').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=6').then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }
