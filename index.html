@@ -302,7 +302,9 @@
 
       centers.forEach(c => {
         if (!Array.isArray(store[c.id]) || store[c.id].length === 0) {
-          store[c.id] = createDefaultSessions(12);
+          store[c.id] = createDefaultSessions(c.sessionCount || 12);
+        } else {
+          c.sessionCount = store[c.id].length;
         }
       });
 
@@ -319,7 +321,13 @@
 
     function packCompact() {
       const compact = {
-        c: centers.map(x => ({ i: x.id, n: x.name, s: x.scheduleDesc, d: x.defaultInterval })),
+        c: centers.map(x => ({
+          i: x.id,
+          n: x.name,
+          s: x.scheduleDesc,
+          d: x.defaultInterval,
+          len: (store[x.id] || []).length || x.sessionCount || 12
+        })),
         s: {},
         t: updatedAt
       };
@@ -331,19 +339,29 @@
 
     function unpackCompact(compactObj) {
       if (!compactObj || !Array.isArray(compactObj.c) || !compactObj.s) return null;
-      const newCenters = compactObj.c.map(x => ({ id: x.i, name: x.n, scheduleDesc: x.s, defaultInterval: x.d }));
+      const newCenters = compactObj.c.map(x => ({
+        id: x.i,
+        name: x.n,
+        scheduleDesc: x.s,
+        defaultInterval: x.d,
+        sessionCount: x.len || 12
+      }));
       const newStore = {};
-      newCenters.forEach(c => {
-        const arr = [];
+      compactObj.c.forEach(c => {
+        const centerId = c.i;
         const filledMap = {};
-        (compactObj.s[c.id] || []).forEach(row => {
+        let maxFilledNum = 0;
+        (compactObj.s[centerId] || []).forEach(row => {
           filledMap[row.n] = row;
+          if (row.n > maxFilledNum) maxFilledNum = row.n;
         });
-        for (let i = 1; i <= 12; i++) {
+        const totalRows = Math.max(1, c.len || maxFilledNum || 12);
+        const arr = [];
+        for (let i = 1; i <= totalRows; i++) {
           const item = filledMap[i];
           arr.push({ session: i, date: item ? item.d : '', content: item ? item.c : '', note: '' });
         }
-        newStore[c.id] = arr;
+        newStore[centerId] = arr;
       });
       return { centers: newCenters, store: newStore, updatedAt: compactObj.t || Date.now() };
     }
@@ -475,6 +493,9 @@
             centers = remoteData.centers;
             normalizeCentersList(centers);
             store = remoteData.store;
+            centers.forEach(c => {
+              if (store[c.id]) c.sessionCount = store[c.id].length;
+            });
             updatedAt = remoteData.updatedAt;
             if (remoteKey) lastSyncedKey = remoteKey;
             hasPendingLocalSave = false;
@@ -897,6 +918,7 @@
       const rows = store[center.id];
       const nextNum = rows.length + 1;
       rows.push({ session: nextNum, date: '', content: '', note: '' });
+      center.sessionCount = rows.length;
       saveStore(`${nextNum}회차 행이 추가되었습니다`);
       renderAll();
     });
@@ -906,14 +928,17 @@
       const rows = store[center.id];
       if (rows.length <= 1) return;
       rows.pop();
+      center.sessionCount = rows.length;
       saveStore(`마지막 회차 행이 삭제되었습니다 (총 ${rows.length}회차)`);
       renderAll();
     });
 
     document.getElementById('btnResetCenter').addEventListener('click', () => {
       const center = getActiveCenter();
+      const curLen = store[center.id] ? store[center.id].length : 12;
       if (confirm(`[${center.name}]의 입력 내용을 모두 비우시겠습니까?`)) {
-        store[center.id] = createDefaultSessions(12);
+        store[center.id] = createDefaultSessions(curLen);
+        center.sessionCount = curLen;
         saveStore(`${center.name} 초기화 완료`);
         renderAll();
       }
@@ -1003,7 +1028,7 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js?v=6').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=7').then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }
