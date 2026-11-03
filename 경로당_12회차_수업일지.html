@@ -385,48 +385,24 @@
       try {
         setCloudStatus('☁️ 클라우드 동기화 저장 중...');
         normalizeCentersList(centers);
-        const payload = {
-          centers: JSON.parse(JSON.stringify(centers)),
-          store: JSON.parse(JSON.stringify(store)),
-          updatedAt
-        };
         const compactObj = packCompact();
 
-        // 1. Send compact payload to ntfy.sh (instant notification + real-time SSE trigger)
-        fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+        // Send compact payload to ntfy.sh (primary real-time pubsub)
+        const ntfyPost = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
           method: 'POST',
           headers: { 'Title': 'sync' },
           body: JSON.stringify(compactObj)
-        }).catch(() => {});
+        });
 
-        // 2. Primary long-term storage via bytebin + keyvalue
-        try {
-          const postRes = await fetch('https://bytebin.lucko.me/post', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            cache: 'no-store'
-          });
-          if (postRes.ok) {
-            const { key } = await postRes.json();
-            if (key) {
-              await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_APP_KEY}/${KV_POINTER_FIELD}/${key}?t=${Date.now()}`, {
-                method: 'POST',
-                cache: 'no-store'
-              });
-              lastSyncedKey = key;
-              localStorage.setItem(LAST_KEY_STORAGE, key);
-            }
-          }
-        } catch (e) {
-          // Bytebin rate-limit or network hiccup; ntfy still propagated the change
+        if (ntfyPost.ok) {
+          hasPendingLocalSave = false;
+          localRevision = 0;
+          syncedRevision = 0;
+          localStorage.removeItem(PENDING_PUSH_STORAGE);
+          setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+        } else {
+          throw new Error('ntfy push failed');
         }
-
-        hasPendingLocalSave = false;
-        localRevision = 0;
-        syncedRevision = 0;
-        localStorage.removeItem(PENDING_PUSH_STORAGE);
-        setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
       } catch (e) {
         setCloudStatus('⚠️ 기기 내부에 저장됨 (동기화 재시도 중)', false);
       } finally {
@@ -444,31 +420,8 @@
         if (forcePull) setCloudStatus('🔄 최신 데이터 불러오는 중...');
 
         let remoteData = null;
-        let remoteKey = '';
 
-        // Try bytebin via keyvalue pointer first
-        try {
-          const ptrRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_APP_KEY}/${KV_POINTER_FIELD}?t=${Date.now()}`, {
-            cache: 'no-store'
-          });
-          if (ptrRes.ok) {
-            const rawKey = await ptrRes.text();
-            remoteKey = rawKey.replace(/"/g, '').trim();
-            if (remoteKey && remoteKey !== 'null' && remoteKey.length < 30) {
-              if (forcePull || remoteKey !== lastSyncedKey) {
-                const blobRes = await fetch(`https://bytebin.lucko.me/${remoteKey}?t=${Date.now()}`, { cache: 'no-store' });
-                if (blobRes.ok) {
-                  const bJson = await blobRes.json();
-                  if (bJson && Array.isArray(bJson.centers) && bJson.store) {
-                    remoteData = bJson;
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {}
-
-        // Fallback or comparison with ntfy.sh
+        // Fetch latest from ntfy.sh
         try {
           const ntfyRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}/json?poll=1`, { cache: 'no-store' });
           if (ntfyRes.ok) {
@@ -476,20 +429,25 @@
             const lines = text.trim().split('\n').filter(Boolean);
             if (lines.length > 0) {
               const lastLine = JSON.parse(lines[lines.length - 1]);
-              if (lastLine.message) {
-                const ntfyObj = JSON.parse(lastLine.message);
-                if (ntfyObj && ntfyObj.t && (!remoteData || ntfyObj.t > (remoteData.updatedAt || 0))) {
-                  const unpacked = unpackCompact(ntfyObj);
-                  if (unpacked) remoteData = unpacked;
-                }
+              let ntfyObj = null;
+              if (lastLine.attachment && lastLine.attachment.url) {
+                const aRes = await fetch(lastLine.attachment.url, { cache: 'no-store' });
+                if (aRes.ok) ntfyObj = await aRes.json();
+              } else if (lastLine.message && typeof lastLine.message === 'string' && lastLine.message.startsWith('{')) {
+                ntfyObj = JSON.parse(lastLine.message);
+              }
+              if (ntfyObj && ntfyObj.t) {
+                const unpacked = unpackCompact(ntfyObj);
+                if (unpacked) remoteData = unpacked;
               }
             }
           }
         } catch (e) {}
 
         if (remoteData && remoteData.updatedAt) {
-          // If remote is newer than local, adopt it!
-          if (remoteData.updatedAt > updatedAt || forcePull) {
+          // CRITICAL: Only adopt remote if it is strictly NEWER than local!
+          // NEVER overwrite newer local deletions/edits with stale cloud data!
+          if (remoteData.updatedAt > updatedAt) {
             centers = remoteData.centers;
             normalizeCentersList(centers);
             store = remoteData.store;
@@ -497,14 +455,12 @@
               if (store[c.id]) c.sessionCount = store[c.id].length;
             });
             updatedAt = remoteData.updatedAt;
-            if (remoteKey) lastSyncedKey = remoteKey;
             hasPendingLocalSave = false;
             localRevision = 0;
             syncedRevision = 0;
             localStorage.setItem(CENTERS_KEY, JSON.stringify(centers));
             localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
             localStorage.setItem(UPDATED_KEY, String(updatedAt));
-            if (remoteKey) localStorage.setItem(LAST_KEY_STORAGE, remoteKey);
             localStorage.removeItem(PENDING_PUSH_STORAGE);
             const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
             if (savedTab && centers.some(c => c.id === savedTab)) {
@@ -515,6 +471,10 @@
             }
             renderAll();
             setCloudStatus('☁️ 최신 데이터 연동 완료');
+            return;
+          } else if (updatedAt > remoteData.updatedAt) {
+            // Local is newer! Push local to cloud!
+            await pushToCloud();
             return;
           }
         }
@@ -1028,7 +988,7 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js?v=7').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=8').then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }
