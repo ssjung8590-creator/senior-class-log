@@ -226,11 +226,12 @@
     const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
     const DEFAULT_CENTERS = [
-      { id: 'c1', name: '궁말경로당', scheduleDesc: '월요일 / 수요일(오전)', defaultInterval: 'mon_wed' },
-      { id: 'c2', name: '센텀 퍼스트', scheduleDesc: '화요일', defaultInterval: 'weekly' },
-      { id: 'c3', name: '더포레스트힐 심화반', scheduleDesc: '수요일 (오전)', defaultInterval: 'weekly' },
-      { id: 'c4', name: '더포레스트힐', scheduleDesc: '목요일', defaultInterval: 'weekly' },
-      { id: 'c5', name: '부천 원미 노인복지관', scheduleDesc: '금요일', defaultInterval: 'weekly' }
+      { id: 'c1', name: '궁말경로당', scheduleDesc: '월요일 / 수요일(오전)', defaultInterval: 'mon_wed', sessionCount: 22 },
+      { id: 'c2', name: '센텀 퍼스트', scheduleDesc: '화요일', defaultInterval: 'weekly', sessionCount: 9 },
+      { id: 'c3', name: '더포레스트힐 심화반', scheduleDesc: '수요일 (오전)', defaultInterval: 'weekly', sessionCount: 8 },
+      { id: 'c4', name: '더포레스트힐', scheduleDesc: '목요일', defaultInterval: 'weekly', sessionCount: 11 },
+      { id: 'c5', name: '부천 원미 노인복지관', scheduleDesc: '금요일', defaultInterval: 'weekly', sessionCount: 4 },
+      { id: 'c_1791925216819', name: '백석대학교회', scheduleDesc: '일요일', defaultInterval: 'weekly', sessionCount: 3 }
     ];
 
     const LAST_KEY_STORAGE = 'senior_center_last_cloud_key_v2';
@@ -317,7 +318,11 @@
       }
     }
 
-    const NTFY_TOPIC = 'senior_log_db_b9xu2nov_2026';
+    const PUBNUB_CHANNEL = 'senior_class_log_2026_ssjung_prod_7a2f';
+    const PUBNUB_PUB_KEY = 'demo';
+    const PUBNUB_SUB_KEY = 'demo';
+    let isSubscribing = false;
+    let pubnubTimetoken = '0';
 
     function packCompact() {
       const compact = {
@@ -387,21 +392,27 @@
         normalizeCentersList(centers);
         const compactObj = packCompact();
 
-        // Send compact payload to ntfy.sh (primary real-time pubsub)
-        const ntfyPost = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+        const pubUrl = `https://ps.pndsn.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${PUBNUB_CHANNEL}/0`;
+        const res = await fetch(pubUrl, {
           method: 'POST',
-          headers: { 'Title': 'sync' },
-          body: JSON.stringify(compactObj)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(compactObj),
+          signal: AbortSignal.timeout(5000)
         });
 
-        if (ntfyPost.ok) {
-          hasPendingLocalSave = false;
-          localRevision = 0;
-          syncedRevision = 0;
-          localStorage.removeItem(PENDING_PUSH_STORAGE);
-          setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+        if (res.ok) {
+          const result = await res.json();
+          if (Array.isArray(result) && result[0] === 1) {
+            hasPendingLocalSave = false;
+            localRevision = 0;
+            syncedRevision = 0;
+            localStorage.removeItem(PENDING_PUSH_STORAGE);
+            setCloudStatus('☁️ 스마트폰·PC 실시간 연동됨');
+          } else {
+            throw new Error('PubNub reject: ' + JSON.stringify(result));
+          }
         } else {
-          throw new Error('ntfy push failed');
+          throw new Error('HTTP ' + res.status);
         }
       } catch (e) {
         setCloudStatus('⚠️ 기기 내부에 저장됨 (동기화 재시도 중)', false);
@@ -421,24 +432,18 @@
 
         let remoteData = null;
 
-        // Fetch latest from ntfy.sh
         try {
-          const ntfyRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}/json?poll=1`, { cache: 'no-store' });
-          if (ntfyRes.ok) {
-            const text = await ntfyRes.text();
-            const lines = text.trim().split('\n').filter(Boolean);
-            if (lines.length > 0) {
-              const lastLine = JSON.parse(lines[lines.length - 1]);
-              let ntfyObj = null;
-              if (lastLine.attachment && lastLine.attachment.url) {
-                const aRes = await fetch(lastLine.attachment.url, { cache: 'no-store' });
-                if (aRes.ok) ntfyObj = await aRes.json();
-              } else if (lastLine.message && typeof lastLine.message === 'string' && lastLine.message.startsWith('{')) {
-                ntfyObj = JSON.parse(lastLine.message);
-              }
-              if (ntfyObj && ntfyObj.t) {
-                const unpacked = unpackCompact(ntfyObj);
-                if (unpacked) remoteData = unpacked;
+          const histUrl = `https://ps.pndsn.com/v2/history/sub-key/${PUBNUB_SUB_KEY}/channel/${PUBNUB_CHANNEL}?count=1`;
+          const res = await fetch(histUrl, {
+            headers: { 'Cache-Control': 'no-cache' },
+            signal: AbortSignal.timeout(4000)
+          });
+          if (res.ok) {
+            const histData = await res.json();
+            if (Array.isArray(histData) && Array.isArray(histData[0]) && histData[0].length > 0) {
+              const latestMsg = histData[0][histData[0].length - 1];
+              if (latestMsg && latestMsg.t && Array.isArray(latestMsg.c)) {
+                remoteData = unpackCompact(latestMsg);
               }
             }
           }
@@ -988,7 +993,7 @@
     // PWA 서비스워커 및 휴대폰 홈 화면 바로가기 설치 도우미
     let deferredInstallPrompt = null;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js?v=8').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=9').then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }
@@ -1044,18 +1049,32 @@
       pullFromCloud(false);
     }, 3000);
 
-    // 실시간 SSE 이벤트 리스너 (기기간 실시간 0.1초 즉시 동기화)
-    try {
-      const sse = new EventSource(`https://ntfy.sh/${NTFY_TOPIC}/sse`);
-      sse.onmessage = (e) => {
+    // 실시간 이벤트 리스너 (기기간 실시간 0.2초 즉시 연동)
+    async function startRealtimeSubscriber() {
+      if (isSubscribing) return;
+      isSubscribing = true;
+      while (true) {
         try {
-          const d = JSON.parse(e.data);
-          if (d.event === 'message') {
-            pullFromCloud(false);
+          const subUrl = `https://ps.pndsn.com/v2/subscribe/${PUBNUB_SUB_KEY}/${PUBNUB_CHANNEL}/0?tt=${pubnubTimetoken}`;
+          const res = await fetch(subUrl, { signal: AbortSignal.timeout(35000) });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.t && data.t.t) {
+              const prevTt = pubnubTimetoken;
+              pubnubTimetoken = data.t.t;
+              if (prevTt !== '0' && Array.isArray(data.m) && data.m.length > 0) {
+                pullFromCloud(false);
+              }
+            }
+          } else {
+            await new Promise(r => setTimeout(r, 3000));
           }
-        } catch (err) {}
-      };
-    } catch (e) {}
+        } catch (e) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+    startRealtimeSubscriber();
   </script>
 </body>
 </html>
